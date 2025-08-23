@@ -1,4 +1,3 @@
-// models/event.js
 const mongoose = require('mongoose');
 
 const eventSchema = new mongoose.Schema({
@@ -15,6 +14,10 @@ const eventSchema = new mongoose.Schema({
     required: true
   },
   description: String,
+  price: {
+    type: Number,
+    min: 0
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
