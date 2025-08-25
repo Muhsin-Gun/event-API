@@ -1,4 +1,3 @@
-// controllers/userController.js
 const User = require('../models/user');
 const createError = require('http-errors');
 const mongoose = require('mongoose');
@@ -6,8 +5,15 @@ const mongoose = require('mongoose');
 module.exports = {
   getAllUsers: async (req, res, next) => {
     try {
-      const users = await User.find({});
-      res.send(users);
+      const page = Math.max(parseInt(req.query.page || '1', 10), 1);
+      const limit = Math.min(Math.max(parseInt(req.query.limit || '10', 10), 1), 100);
+
+      const [items, total] = await Promise.all([
+        User.find({}).select('-password').sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
+        User.countDocuments({})
+      ]);
+
+      res.json({ data: items, meta: { page, limit, total, pages: Math.ceil(total / limit) } });
     } catch (error) {
       console.log(error.message);
       next(error);
@@ -17,17 +23,12 @@ module.exports = {
   getUser: async (req, res, next) => {
     const id = req.params.id;
     try {
-      const user = await User.findById(id);
-      if (!user) {
-        throw createError(404, 'User does not exist');
-      }
+      if (!mongoose.isValidObjectId(id)) return next(createError.BadRequest('Invalid user id'));
+      const user = await User.findById(id).select('-password');
+      if (!user) throw createError(404, 'User does not exist');
       res.send(user);
     } catch (error) {
       console.log(error.message);
-      if (error instanceof mongoose.CastError) {
-        next(createError(400, 'Invalid user id'));
-        return;
-      }
       next(error);
     }
   },
@@ -37,7 +38,7 @@ module.exports = {
       const id = req.params.id;
       const update = req.body;
       const options = { new: true };
-      const result = await User.findByIdAndUpdate(id, update, options);
+      const result = await User.findByIdAndUpdate(id, update, options).select('-password');
       res.send(result);
     } catch (error) {
       console.log(error.message);
@@ -49,16 +50,10 @@ module.exports = {
     const id = req.params.id;
     try {
       const user = await User.findByIdAndDelete(id);
-      if (!user) {
-        throw createError(404, 'User does not exist');
-      }
+      if (!user) throw createError(404, 'User does not exist');
       res.send(user);
     } catch (error) {
       console.log(error.message);
-      if (error instanceof mongoose.CastError) {
-        next(createError(400, 'Invalid user id'));
-        return;
-      }
       next(error);
     }
   }

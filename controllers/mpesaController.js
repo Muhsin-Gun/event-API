@@ -62,12 +62,10 @@ module.exports.initiateStkPush = async (req, res, next) => {
 module.exports.mpesaCallback = async (req, res, next) => {
   try {
     const body = req.body;
-    // Safaricom posts result in this shape:
     const result = body?.Body?.stkCallback;
     if (!result) return res.status(200).json({ ok: true });
 
     const { MerchantRequestID, CheckoutRequestID, ResultCode, CallbackMetadata } = result;
-
     const payment = await Payment.findOne({ checkoutRequestID: CheckoutRequestID });
     if (!payment) return res.status(200).json({ ok: true });
 
@@ -87,3 +85,4 @@ module.exports.mpesaCallback = async (req, res, next) => {
     next(err);
   }
 };
+

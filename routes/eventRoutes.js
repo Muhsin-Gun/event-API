@@ -11,3 +11,4 @@ router.delete('/:id', verifyAccessToken, eventController.deleteEvent);
 
 module.exports = router;
 
+

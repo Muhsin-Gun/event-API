@@ -5,7 +5,6 @@ const User = require('../models/user');
 const bcrypt = require('bcryptjs');
 const { signAccessToken } = require('../helpers/jwtHelper');
 
-// Register
 module.exports.register = async (req, res, next) => {
   try {
     const { username, email, password, role } = req.body;
@@ -21,7 +20,6 @@ module.exports.register = async (req, res, next) => {
   }
 };
 
-// Login
 module.exports.login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
@@ -50,7 +48,7 @@ module.exports.forgotPassword = async (req, res, next) => {
       { expiresIn: `${process.env.RESET_TOKEN_TTL_MINUTES || 30}m` }
     );
 
-    // You can email the link. For now, return it for testing.
+    // For production: email the link. For dev/testing, return link.
     const link = `${process.env.FRONTEND_URL}/reset-password?token=${resetJwt}`;
     return res.json({ message: 'Reset link generated', link });
   } catch (err) {
@@ -74,5 +72,6 @@ module.exports.resetPassword = async (req, res, next) => {
     next(err);
   }
 };
+
 
 

@@ -1,5 +1,4 @@
 const Payment = require('../models/payment');
-const mongoose = require('mongoose');
 const createError = require('http-errors');
 
 module.exports.salesReport = async (req, res, next) => {

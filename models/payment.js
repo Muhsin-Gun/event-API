@@ -10,7 +10,7 @@ const paymentSchema = new mongoose.Schema({
   merchantRequestID: String,
   checkoutRequestID: String,
   mpesaReceiptNumber: String,
-  rawCallback: Object,
+  rawCallback: { type: Object },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Payment', paymentSchema);

@@ -13,26 +13,22 @@ module.exports = {
       };
 
       JWT.sign(payload, secret, options, (err, token) => {
-        if (err) {
-          reject(createError.InternalServerError());
-        }
+        if (err) return reject(createError.InternalServerError());
         resolve(token);
       });
     });
   },
 
   verifyAccessToken: (req, res, next) => {
-    if (!req.headers['authorization'])
-      return next(createError.Unauthorized());
-
+    if (!req.headers['authorization']) return next(createError.Unauthorized());
     const authHeader = req.headers['authorization'];
-    const bearerToken = authHeader.split(' ');
-    const token = bearerToken[1];
+    const parts = authHeader.split(' ');
+    if (parts.length !== 2) return next(createError.Unauthorized());
+    const token = parts[1];
 
     JWT.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, payload) => {
       if (err) {
-        const message =
-          err.name === 'JsonWebTokenError' ? 'Unauthorized' : err.message;
+        const message = err.name === 'JsonWebTokenError' ? 'Unauthorized' : err.message;
         return next(createError.Unauthorized(message));
       }
       req.payload = payload;
@@ -44,16 +40,9 @@ module.exports = {
     return new Promise((resolve, reject) => {
       const payload = {};
       const secret = process.env.REFRESH_TOKEN_SECRET;
-      const options = {
-        expiresIn: '1y',
-        issuer: 'event-api',
-        audience: userId.toString(),
-      };
-
+      const options = { expiresIn: '1y', issuer: 'event-api', audience: userId.toString() };
       JWT.sign(payload, secret, options, (err, token) => {
-        if (err) {
-          reject(createError.InternalServerError());
-        }
+        if (err) return reject(createError.InternalServerError());
         resolve(token);
       });
     });
@@ -61,15 +50,11 @@ module.exports = {
 
   verifyRefreshToken: (refreshToken) => {
     return new Promise((resolve, reject) => {
-      JWT.verify(
-        refreshToken,
-        process.env.REFRESH_TOKEN_SECRET,
-        (err, payload) => {
-          if (err) return reject(createError.Unauthorized());
-          const userId = payload.aud;
-          resolve(userId);
-        }
-      );
+      JWT.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET, (err, payload) => {
+        if (err) return reject(createError.Unauthorized());
+        resolve(payload.aud);
+      });
     });
-  },
+  }
 };
+
