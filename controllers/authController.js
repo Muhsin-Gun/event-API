@@ -1,7 +1,6 @@
 // controllers/authController.js
 const User = require('../models/user');
 const bcrypt = require('bcryptjs');
-const createError = require('http-errors');
 const {
   signAccessToken,
   signRefreshToken,
@@ -10,116 +9,129 @@ const {
   verifyPasswordResetToken,
 } = require('../helpers/jwtHelper');
 
-module.exports.register = async (req, res, next) => {
+// controllers/authController.js
+// Only register part
+
+module.exports.register = async (req, res) => {
   try {
-    const { username, email, password /* role ignored for security */ } = req.body;
-    if (!username || !email || !password) throw createError.BadRequest('username, email, password required');
+    const { username, email, password } = req.body;
+    if (!username || !email || !password) 
+      return res.status(400).json({ success: false, message: 'Username, email, and password required' });
 
     const existing = await User.findOne({ email });
-    if (existing) throw createError.Conflict('Email already in use');
+    if (existing) return res.status(409).json({ success: false, message: 'Email already in use' });
 
     const hash = await bcrypt.hash(password, 10);
-    const user = await User.create({ username, email, password: hash, role: 'client' }); // default to client
+    const user = await User.create({ username, email, password: hash, role: 'client' });
 
-    res.status(201).json({
-      message: 'User registered',
-      user: { id: user._id, username: user.username, email: user.email, role: user.role },
-    });
-  } catch (err) {
-    next(err);
-  }
-};
-
-module.exports.login = async (req, res, next) => {
-  try {
-    const { email, password } = req.body;
-    if (!email || !password) throw createError.BadRequest('email and password required');
-
-    const user = await User.findOne({ email });
-    // generic error to avoid user enumeration
-    if (!user) throw createError.Unauthorized('Invalid credentials');
-
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) throw createError.Unauthorized('Invalid credentials');
-
-    // include role in access token payload
     const accessToken = await signAccessToken(user._id, user.role);
     const refreshToken = await signRefreshToken(user._id);
 
-    res.json({
-      message: 'Login successful',
-      accessToken,
-      refreshToken,
+    res.status(201).json({
+      success: true,
+      message: 'User registered',
       user: { id: user._id, username: user.username, email: user.email, role: user.role },
+      token: accessToken,
+      refreshToken,
     });
   } catch (err) {
-    next(err);
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
-module.exports.refreshToken = async (req, res, next) => {
+
+// ------------------- LOGIN -------------------
+module.exports.login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) 
+      return res.status(400).json({ success: false, message: 'Email and password required' });
+
+    const user = await User.findOne({ email });
+    if (!user) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+
+    const accessToken = await signAccessToken(user._id, user.role);
+    const refreshToken = await signRefreshToken(user._id);
+
+    res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      user: { id: user._id, username: user.username, email: user.email, role: user.role },
+      token: accessToken,
+      refreshToken,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// ------------------- REFRESH TOKEN -------------------
+module.exports.refreshToken = async (req, res) => {
   try {
     const { refreshToken } = req.body;
-    if (!refreshToken) throw createError.BadRequest('refreshToken required');
+    if (!refreshToken) return res.status(400).json({ success: false, message: 'refreshToken required' });
 
     const userId = await verifyRefreshToken(refreshToken);
-    // fetch role so we can re-issue access token with role claim
     const user = await User.findById(userId).select('role');
-    if (!user) throw createError.Unauthorized();
+    if (!user) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
     const accessToken = await signAccessToken(userId, user.role);
     const newRefreshToken = await signRefreshToken(userId);
 
-    res.json({ accessToken, refreshToken: newRefreshToken });
+    res.json({ success: true, accessToken, refreshToken: newRefreshToken });
   } catch (err) {
-    next(err);
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
-// Do not reveal whether email exists
-module.exports.forgotPassword = async (req, res, next) => {
+// ------------------- FORGOT PASSWORD -------------------
+module.exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
-    if (!email) throw createError.BadRequest('email required');
+    if (!email) return res.status(400).json({ success: false, message: 'Email required' });
 
     const user = await User.findOne({ email });
     let resetLink;
     if (user) {
       const token = generatePasswordResetToken(user._id);
       resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
-      // TODO: send email with resetLink
+      // TODO: send email in production
     }
 
     res.json({
+      success: true,
       message: 'If that account exists, a reset link has been sent',
-      // dev convenience (omit in prod):
-      link: resetLink,
+      link: resetLink, // optional for dev
     });
   } catch (err) {
-    next(err);
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 };
 
-module.exports.resetPassword = async (req, res, next) => {
+// ------------------- RESET PASSWORD -------------------
+module.exports.resetPassword = async (req, res) => {
   try {
     const { token, newPassword } = req.body;
-    if (!token || !newPassword) throw createError.BadRequest('token and newPassword required');
+    if (!token || !newPassword) return res.status(400).json({ success: false, message: 'Token and newPassword required' });
 
     const { userId } = await verifyPasswordResetToken(token);
 
     const user = await User.findById(userId);
-    if (!user) throw createError.NotFound('User not found');
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
     user.password = await bcrypt.hash(newPassword, 10);
     await user.save();
 
-    res.json({ message: 'Password reset successful' });
+    res.json({ success: true, message: 'Password reset successful' });
   } catch (err) {
-    next(err);
+    console.error(err);
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 };
-
-
-
-
-
