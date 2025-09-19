@@ -1,4 +1,3 @@
-// controllers/mpesaController.js
 const axios = require('axios');
 const moment = require('moment');
 const Payment = require('../models/payment');
@@ -7,14 +6,13 @@ const createError = require('http-errors');
 
 /**
  * Get Daraja OAuth token
+ * Fake mode: returns null token to force simulation
  */
 const getAccessToken = async () => {
   const consumerKey = process.env.MPESA_CONSUMER_KEY;
   const consumerSecret = process.env.MPESA_CONSUMER_SECRET;
 
-  if (!consumerKey || !consumerSecret) {
-    throw new Error('MPESA_CONSUMER_KEY / MPESA_CONSUMER_SECRET not configured');
-  }
+  if (!consumerKey || !consumerSecret) return null;
 
   const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
   const url =
@@ -40,16 +38,18 @@ function normalizePhone(msisdn) {
 }
 
 /**
- * Initiate STK Push
+ * Initiate STK Push (Fake/Simulated)
  */
 module.exports.initiateStkPush = async (req, res, next) => {
   try {
-    const { eventId, phone, amount: clientAmount } = req.body;
+    const { eventId, phone, payment: clientPayment } = req.body;
+
     if (!phone) throw createError.BadRequest('phone required');
 
     const userId = req.payload?.aud;
     if (!userId) return next(createError.Unauthorized());
 
+    // find event if eventId provided
     let event = null;
     if (eventId) {
       try {
@@ -60,11 +60,14 @@ module.exports.initiateStkPush = async (req, res, next) => {
       }
     }
 
+    // determine amount
     let amount;
     if (event && event.price > 0) {
       amount = Math.round(event.price);
-    } else if (clientAmount && clientAmount > 0) {
-      amount = Math.round(clientAmount);
+    } else if (clientPayment) {
+      // remove any non-digit, e.g., "200ksh" => 200
+      const cleaned = String(clientPayment).replace(/\D/g, '');
+      amount = Number(cleaned);
     } else {
       return next(createError.BadRequest('Event has no valid price and no amount provided'));
     }
@@ -75,83 +78,32 @@ module.exports.initiateStkPush = async (req, res, next) => {
     // Create payment record
     const payment = await Payment.create({
       user: userId,
-      event: event ? event._id : undefined, // optional now
+      event: event ? event._id : undefined,
       amount,
       phone: phoneNorm,
       status: 'PENDING',
     });
 
-    // Dev fallback if credentials missing
-    const shortCode = process.env.MPESA_SHORT_CODE || '';
-    const passkey = process.env.MPESA_PASSKEY || '';
-    const timestamp = moment().format('YYYYMMDDHHmmss');
-
-    if (!shortCode || !passkey) {
-      await Payment.findByIdAndUpdate(payment._id, {
-        merchantRequestID: `DEV-MERCHANT-${payment._id}`,
-        checkoutRequestID: `DEV-CHECKOUT-${payment._id}`,
-        status: 'PENDING',
-      });
-      return res.json({
-        success: true,
-        message: 'Dev: MPesa credentials missing. Simulated STK push created.',
-        paymentId: payment._id,
-        simulated: true,
-      });
-    }
-
-    const password = Buffer.from(`${shortCode}${passkey}${timestamp}`).toString('base64');
-
-    let token;
-    try {
-      token = await getAccessToken();
-    } catch (err) {
-      console.warn('Daraja access token error, using simulated:', err.message);
-      await Payment.findByIdAndUpdate(payment._id, {
-        merchantRequestID: `DEV-MERCHANT-${payment._id}`,
-        checkoutRequestID: `DEV-CHECKOUT-${payment._id}`,
-        status: 'PENDING',
-      });
-      return res.json({
-        success: true,
-        message: 'Dev: Could not obtain Daraja token. Simulated STK push created.',
-        paymentId: payment._id,
-        simulated: true,
-      });
-    }
-
-    const payload = {
-      BusinessShortCode: shortCode,
-      Password: password,
-      Timestamp: timestamp,
-      TransactionType: 'CustomerPayBillOnline',
-      Amount: amount,
-      PartyA: phoneNorm,
-      PartyB: shortCode,
-      PhoneNumber: phoneNorm,
-      CallBackURL: process.env.MPESA_CALLBACK_URL,
-      AccountReference: `EVT-${event ? event._id.toString() : payment._id.toString()}`,
-      TransactionDesc: `Event Ticket ${event ? event.title : 'Direct Payment'}`,
-    };
-
-    const { data } = await axios.post(stkPushUrl(process.env.MPESA_ENV), payload, {
-      headers: { Authorization: `Bearer ${token}` },
-      timeout: 15_000,
-    });
-
+    // FAKE/SIMULATED MODE
     await Payment.findByIdAndUpdate(payment._id, {
-      merchantRequestID: data.MerchantRequestID || null,
-      checkoutRequestID: data.CheckoutRequestID || data.ResponseMetadata?.CheckoutRequestID || null,
+      merchantRequestID: `DEV-MERCHANT-${payment._id}`,
+      checkoutRequestID: `DEV-CHECKOUT-${payment._id}`,
+      status: 'PENDING',
     });
 
-    res.json({ success: true, message: 'STK push initiated', paymentId: payment._id, mpesa: data });
+    return res.json({
+      success: true,
+      message: 'Dev: Simulated STK push created.',
+      paymentId: payment._id,
+      simulated: true,
+    });
   } catch (err) {
     next(err);
   }
 };
 
 /**
- * MPESA callback endpoint
+ * MPESA callback endpoint (unchanged)
  */
 module.exports.mpesaCallback = async (req, res, next) => {
   try {
@@ -190,4 +142,3 @@ module.exports.mpesaCallback = async (req, res, next) => {
     next(err);
   }
 };
-

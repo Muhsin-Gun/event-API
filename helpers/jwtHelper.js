@@ -20,7 +20,7 @@ module.exports.signAccessToken = (userId, role = 'client') => {
     if (!ACCESS_TOKEN_SECRET) return reject(createError.InternalServerError('Missing ACCESS_TOKEN_SECRET'));
     const payload = { role };
     const options = {
-      expiresIn: process.env.ACCESS_TOKEN_TTL || '1d',
+      expiresIn: process.env.ACCESS_TOKEN_TTL || '1d', // ✅ changed to 1 day
       issuer: process.env.TOKEN_ISSUER || 'event-api',
       audience: String(userId),
     };
@@ -43,12 +43,9 @@ module.exports.verifyAccessToken = (req, res, next) => {
     const token = parts[1];
     JWT.verify(token, ACCESS_TOKEN_SECRET, (err, payload) => {
       if (err) {
-        // avoid leaking details in production; keep useful messages in dev
         const message = err.name === 'JsonWebTokenError' ? 'Unauthorized' : err.message;
         return next(createError.Unauthorized(message));
       }
-      // Normalize payload for downstream code: always provide aud and role
-      // payload will contain aud (from sign options) and role (from payload)
       req.payload = {
         aud: payload.aud || payload.audience || payload.sub,
         role: payload.role || null,
@@ -67,11 +64,10 @@ module.exports.signRefreshToken = (userId) => {
   return new Promise((resolve, reject) => {
     if (!REFRESH_TOKEN_SECRET) return reject(createError.InternalServerError('Missing REFRESH_TOKEN_SECRET'));
     const options = {
-      expiresIn: process.env.REFRESH_TOKEN_TTL || '7d',
+      expiresIn: process.env.REFRESH_TOKEN_TTL || '1d', // ✅ changed to 1 day
       issuer: process.env.TOKEN_ISSUER || 'event-api',
       audience: String(userId),
     };
-    // empty payload - audience used for userId
     JWT.sign({}, REFRESH_TOKEN_SECRET, options, (err, token) => {
       if (err) return reject(createError.InternalServerError('Could not sign refresh token'));
       resolve(token);
@@ -84,7 +80,6 @@ module.exports.verifyRefreshToken = (refreshToken) => {
     if (!REFRESH_TOKEN_SECRET) return reject(createError.InternalServerError('Missing REFRESH_TOKEN_SECRET'));
     JWT.verify(refreshToken, REFRESH_TOKEN_SECRET, (err, payload) => {
       if (err) return reject(createError.Unauthorized('Invalid refresh token'));
-      // return audience which we used to store userId
       const userId = payload.aud || payload.audience || payload.sub;
       if (!userId) return reject(createError.Unauthorized('Invalid refresh token payload'));
       resolve(userId);
@@ -93,12 +88,10 @@ module.exports.verifyRefreshToken = (refreshToken) => {
 };
 
 // ---- Password reset tokens (one-time use, in-memory) ----
-// Lightweight demo store. Use Redis / DB for production.
 const resetTokenStore = new Set();
 
 module.exports.generatePasswordResetToken = (userId) => {
   if (!JWT_RESET_SECRET) throw new Error('Missing JWT_RESET_SECRET');
-  // TTL can be like '30m' or number of seconds; keep it simple using string
   const token = JWT.sign({}, JWT_RESET_SECRET, {
     expiresIn: `${RESET_TTL_MINUTES}m`.includes('m') ? `${RESET_TTL_MINUTES}m` : `${RESET_TTL_MINUTES}m`,
     issuer: process.env.TOKEN_ISSUER || 'event-api',
@@ -114,7 +107,7 @@ module.exports.verifyPasswordResetToken = (token) => {
     JWT.verify(token, JWT_RESET_SECRET, (err, payload) => {
       if (err) return reject(createError.BadRequest('Invalid or expired token'));
       if (!resetTokenStore.has(token)) return reject(createError.BadRequest('Token already used or invalid'));
-      resetTokenStore.delete(token); // one-time use
+      resetTokenStore.delete(token);
       const userId = payload.aud || payload.audience || payload.sub;
       if (!userId) return reject(createError.BadRequest('Invalid token payload'));
       resolve({ userId });
