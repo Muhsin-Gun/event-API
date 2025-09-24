@@ -4,14 +4,29 @@ const createError = require('http-errors');
 
 module.exports.salesReport = async (req, res, next) => {
   try {
-    const { from, to, groupBy = 'month' } = req.query;
-    if (!from || !to) throw createError.BadRequest('from and to are required (YYYY-MM-DD)');
+    let { from, to, groupBy = 'month' } = req.query;
+
+    // If missing, default to last 30 days (optional)
+    if (!from || !to) {
+      const now = new Date();
+      const past = new Date(now);
+      past.setDate(now.getDate() - 30);
+      from = from || past.toISOString().slice(0, 10); // YYYY-MM-DD
+      to = to || now.toISOString().slice(0, 10);
+    }
 
     const fromDate = new Date(from);
     const toDate = new Date(to);
-    toDate.setHours(23, 59, 59, 999); // inclusive end-of-day
+    if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+      throw createError.BadRequest('from or to is not a valid date (use YYYY-MM-DD)');
+    }
+    toDate.setHours(23, 59, 59, 999);
 
-    const match = { status: 'SUCCESS', createdAt: { $gte: fromDate, $lte: toDate } };
+    // Only successful payments (case-insensitive)
+    const match = {
+      status: { $in: ['SUCCESS', 'Success', 'success'] },
+      createdAt: { $gte: fromDate, $lte: toDate },
+    };
 
     const dateProject =
       groupBy === 'day'
@@ -27,14 +42,27 @@ module.exports.salesReport = async (req, res, next) => {
           ? { year: '$y', week: '$w' }
           : { year: '$y', month: '$m' };
 
-    const agg = await Payment.aggregate([
+    // Simple pipeline: ensure amount is numeric by using $toDouble if available.
+    const pipeline = [
       { $match: match },
-      { $project: { amount: 1, createdAt: 1, ...dateProject } },
+      {
+        $addFields: {
+          _amountNum: {
+            $cond: [
+              { $isNumber: '$amount' },
+              '$amount',
+              { $toDouble: { $ifNull: ['$amount', 0] } }
+            ]
+          }
+        }
+      },
+      { $project: { amount: '$_amountNum', createdAt: 1, ...dateProject } },
       { $group: { _id: groupId, totalAmount: { $sum: '$amount' }, payments: { $sum: 1 } } },
       { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1, '_id.week': 1 } },
-    ]);
+    ];
 
-    res.json({ from, to, groupBy, data: agg });
+    const agg = await Payment.aggregate(pipeline);
+    res.json({ success: true, from, to, groupBy, data: agg });
   } catch (err) {
     next(err);
   }
