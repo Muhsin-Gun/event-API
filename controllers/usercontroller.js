@@ -53,7 +53,7 @@ async function updateUser(req, res, next) {
     if (!requester) return next(createError.Unauthorized());
 
     const update = { ...req.body };
-    delete update.password; // never here
+    delete update.password; // never update password here
 
     // only admin may change role
     if (update.role && requester.role !== 'admin') delete update.role;
@@ -85,5 +85,3 @@ async function deleteUser(req, res, next) {
 }
 
 module.exports = { getAllUsers, getUser, updateUser, deleteUser };
-
-

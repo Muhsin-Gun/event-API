@@ -48,12 +48,10 @@ const port = process.env.PORT || 4000;
 async function start() {
   try {
     console.log('Connecting to MongoDB...', mongoUri, 'dbName=', dbName);
-    // modern mongoose: pass only options you need. do not pass deprecated useUnifiedTopology/useNewUrlParser
     await mongoose.connect(mongoUri, { dbName, serverSelectionTimeoutMS: 5000 });
     console.log('✅ MongoDB connected');
   } catch (err) {
     console.error('❌ Mongo connection error:', err && err.message ? err.message : err);
-    console.error('Make sure MongoDB is running and MONGO_URI in .env is correct.');
     process.exit(1);
   }
 
@@ -63,4 +61,3 @@ async function start() {
 }
 
 start();
-

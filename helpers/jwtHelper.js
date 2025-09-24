@@ -64,7 +64,7 @@ module.exports.signRefreshToken = (userId) => {
   return new Promise((resolve, reject) => {
     if (!REFRESH_TOKEN_SECRET) return reject(createError.InternalServerError('Missing REFRESH_TOKEN_SECRET'));
     const options = {
-      expiresIn: process.env.REFRESH_TOKEN_TTL || '1d', // ✅ changed to 1 day
+      expiresIn: process.env.REFRESH_TOKEN_TTL || '30d', // ✅ changed to 1 day
       issuer: process.env.TOKEN_ISSUER || 'event-api',
       audience: String(userId),
     };
